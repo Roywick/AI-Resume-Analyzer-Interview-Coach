@@ -1,0 +1,82 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-paper text-ink font-body antialiased transition-colors duration-300;
+  }
+
+  html.dark body {
+    @apply bg-ink text-paper;
+  }
+
+  h1, h2, h3, h4 {
+    @apply font-display;
+  }
+
+  ::selection {
+    @apply bg-scan/30 text-inherit;
+  }
+
+  a:focus-visible,
+  button:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible,
+  [tabindex]:focus-visible {
+    outline: 2px solid #22D3EE;
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  .surface {
+    @apply bg-paper-panel dark:bg-ink-panel border border-paper-line dark:border-ink-line rounded-2xl;
+  }
+
+  .container-page {
+    @apply max-w-6xl mx-auto px-5 sm:px-8;
+  }
+
+  .eyebrow {
+    @apply font-mono text-xs uppercase tracking-[0.18em] text-scan-strong dark:text-scan;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-ink dark:bg-scan text-paper dark:text-ink font-medium px-5 py-3 text-sm
+    hover:opacity-90 active:opacity-80 transition-all shadow-sm disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-paper-line dark:border-ink-line
+    text-ink dark:text-paper font-medium px-5 py-3 text-sm hover:border-scan hover:text-scan-strong dark:hover:text-scan
+    transition-all disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-mono border;
+  }
+
+  .chip-pass {
+    @apply chip bg-scan-soft border-scan/30 text-scan-strong dark:text-scan;
+  }
+
+  .chip-flag {
+    @apply chip bg-flag-soft border-flag/30 text-flag-strong dark:text-flag;
+  }
+}

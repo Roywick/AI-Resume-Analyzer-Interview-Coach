@@ -1,7 +1,13 @@
 import axios from 'axios';
 
+// In dev, Vite's server.proxy (vite.config.js) forwards '/api' to the local
+// backend, so a relative path works. That proxy does NOT exist in a
+// production build — it's a dev-server-only feature — so in production we
+// need the deployed backend's full URL instead. Set VITE_API_BASE_URL in
+// your hosting provider's environment variables (e.g. Vercel) to something
+// like https://your-backend.onrender.com/api.
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
   timeout: 60000, // Gemini calls can be slow — generous timeout
 });
 

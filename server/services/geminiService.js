@@ -19,17 +19,22 @@ function getClient() {
 }
 
 // ---------------------------------------------------------------------------
-// Quota / rate-limit handling
+// Quota / rate-limit / overload handling
 //
-// Gemini's free tier returns HTTP 429 for two very different situations:
-//   1. A short-lived per-minute limit (RPM/TPM) — worth a quick retry.
-//   2. The daily per-model quota (RPD) — retrying will just fail again and
-//      again until the quota resets (usually midnight Pacific), so we detect
-//      this and fail fast with one clear message instead of hammering the
-//      API and spamming the UI with repeated errors.
+// Gemini can fail transiently in a few different ways, and treating them
+// all the same would either retry forever (pointless for a daily quota) or
+// give up too early (wasteful for a genuinely temporary blip):
+//   1. HTTP 429, short-lived per-minute limit (RPM/TPM) — worth a quick retry.
+//   2. HTTP 429, the daily per-model quota (RPD) — retrying is pointless
+//      until the quota resets (usually midnight Pacific), so we detect this
+//      and fail fast with one clear message instead of hammering the API.
+//   3. HTTP 503, the model itself is overloaded server-side ("high demand")
+//      — unrelated to our quota, and usually clears up within seconds, so
+//      this is worth retrying more aggressively than a 429.
 // ---------------------------------------------------------------------------
 
 const MAX_RETRIES = 3;
+const MAX_OVERLOAD_RETRIES = 4; // 503s are usually brief, so retry a bit harder
 const BASE_DELAY_MS = 1000;
 
 function sleep(ms) {
@@ -41,6 +46,10 @@ function isDailyQuotaError(err) {
   return /PerDay|RPD|daily/i.test(text);
 }
 
+function isOverloadedError(err) {
+  return err?.status === 503;
+}
+
 function extractRetryDelayMs(err) {
   const match = err?.message?.match(/"retryDelay":"(\d+(?:\.\d+)?)s"/);
   if (match) return Math.ceil(parseFloat(match[1]) * 1000);
@@ -48,6 +57,14 @@ function extractRetryDelayMs(err) {
 }
 
 function friendlyQuotaError(err) {
+  if (isOverloadedError(err)) {
+    const friendly = new Error(
+      "Google's AI service is experiencing high demand right now. We retried automatically but it's still busy — please try again in a moment."
+    );
+    friendly.status = 503;
+    friendly.name = 'Model overloaded';
+    return friendly;
+  }
   if (isDailyQuotaError(err)) {
     const friendly = new Error(
       "We've hit today's free usage limit for the AI service. Please try again after the quota resets, or upgrade the Gemini API key's billing plan for higher limits."
@@ -63,13 +80,14 @@ function friendlyQuotaError(err) {
 }
 
 /**
- * Calls an async Gemini request function, retrying transient (per-minute)
- * rate-limit errors with exponential backoff. Daily-quota errors are not
- * retried — they're converted to a single friendly error immediately.
+ * Calls an async Gemini request function, retrying transient errors
+ * (per-minute rate limits and 503 overload) with exponential backoff.
+ * Daily-quota errors are not retried — they're converted to a single
+ * friendly error immediately.
  */
 async function withRetry(requestFn) {
   let lastErr;
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+  for (let attempt = 0; attempt <= MAX_OVERLOAD_RETRIES; attempt++) {
     try {
       return await requestFn();
     } catch (err) {
@@ -77,10 +95,14 @@ async function withRetry(requestFn) {
       const wrapped = status ? Object.assign(err, { status }) : err;
       lastErr = wrapped;
 
-      if (wrapped?.status !== 429) throw wrapped; // non-rate-limit error, don't retry
+      const overloaded = isOverloadedError(wrapped);
+      const rateLimited = wrapped?.status === 429;
+      if (!overloaded && !rateLimited) throw wrapped; // not a transient error, don't retry
 
-      if (isDailyQuotaError(wrapped)) break; // no point retrying a daily cap
-      if (attempt === MAX_RETRIES) break;
+      if (rateLimited && isDailyQuotaError(wrapped)) break; // no point retrying a daily cap
+
+      const limit = overloaded ? MAX_OVERLOAD_RETRIES : MAX_RETRIES;
+      if (attempt === limit) break;
 
       const delay = extractRetryDelayMs(wrapped) ?? BASE_DELAY_MS * 2 ** attempt;
       await sleep(delay);
